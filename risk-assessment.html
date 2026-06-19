@@ -78,6 +78,8 @@ table.ra td{border:1px solid var(--line);padding:6px;vertical-align:top;font-siz
 }
 .printhead{display:none}.printhead h2{margin:0;color:#1f4e79}.printhead .ph-meta{font-size:11px;margin:4px 0 8px}
 </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 <header class="app">
@@ -156,7 +158,7 @@ table.ra td{border:1px solid var(--line);padding:6px;vertical-align:top;font-siz
   <div class="card no-print">
     <h2>4. Save &amp; file</h2>
     <div class="toolbar">
-      <button id="print">Print / Save as PDF (this RA)</button>
+      <button id="print">Download as PDF (this RA)</button>
       <button class="ghost" id="reset">Reset all to templates</button>
       <span class="saved" id="savedmsg"></span>
     </div>
@@ -272,7 +274,45 @@ function delTemplate(id){const t=tpl(id);if(!t||t.status!=="custom"){alert("Only
 
 document.getElementById("addtemplate").onclick=addTemplate;
 document.getElementById("addrow").onclick=()=>{tpl(state.current).rows.push({hazard:"",who:"",controls:"",iS:"",iL:"",action:"",resp:"",target:"",rS:"",rL:""});save();render();};
-document.getElementById("print").onclick=()=>window.print();
+function hexToRgb(h){h=(h||'#000000').replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+function riskCell(s,l){
+  if(!s||!l) return {content:"\u2013", styles:{halign:'center'}};
+  const sc=s*l, b=bandFor(sc);
+  return {content:sc+"  "+b.name, styles:{halign:'center', fillColor:hexToRgb(b.bg), textColor:hexToRgb(b.fg), fontStyle:'bold'}};
+}
+function downloadPdf(){
+  const ns=window.jspdf;
+  if(!ns||!ns.jsPDF){ alert("The PDF tool hasn't finished loading (or couldn't be reached). Wait a moment and try again, or check your connection."); return; }
+  const t=tpl(state.current), d=state.details;
+  const doc=new ns.jsPDF({orientation:"landscape", unit:"mm", format:"a4"});
+  const pageW=doc.internal.pageSize.getWidth(), pageH=doc.internal.pageSize.getHeight();
+  try{ const img=document.querySelector('.brand img'); if(img&&img.src) doc.addImage(img.src,'PNG',10,8,50,8.9); }catch(e){}
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(31,78,121);
+  doc.text(`${t.title}${t.num?' ('+t.num+')':''} \u2013 Risk Assessment`, 66, 13);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(70,70,70);
+  doc.text(`School: ${d.school||'\u2014'}    ${d.address||''}`, 66, 18);
+  doc.text(`Date: ${d.date||'\u2014'}    Completed by: ${d.by||'\u2014'}    Review date: ${d.review||'\u2014'}`, 66, 22.5);
+  const body=t.rows.map(rw=>{
+    const a=[]; if(rw.action) a.push(rw.action); if(rw.resp) a.push('Owner: '+rw.resp); if(rw.target) a.push('Target: '+rw.target);
+    return [rw.hazard||'', rw.who||'', rw.controls||'', riskCell(rw.iS,rw.iL), a.join('\n'), riskCell(rw.rS,rw.rL)];
+  });
+  doc.autoTable({
+    startY:28,
+    head:[['Hazard','Who may be harmed','Control measures in place','Initial risk (S\u00d7L)','Further action (action / owner / date)','Revised risk (S\u00d7L)']],
+    body:body,
+    styles:{fontSize:8, cellPadding:1.8, valign:'top', overflow:'linebreak', lineColor:[215,222,230], lineWidth:0.1},
+    headStyles:{fillColor:[31,78,121], textColor:255, fontSize:8, halign:'left'},
+    columnStyles:{0:{cellWidth:47},1:{cellWidth:35},2:{cellWidth:78},3:{cellWidth:29},4:{cellWidth:58},5:{cellWidth:29}},
+    margin:{left:10,right:10},
+    didDrawPage:()=>{ doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(120);
+      doc.text('Altmore and Lathom Federation  \u2022  generated '+new Date().toLocaleDateString('en-GB'), 10, pageH-6);
+      doc.text('Page '+doc.internal.getNumberOfPages(), pageW-24, pageH-6); }
+  });
+  const safe=s=>(s||'').replace(/[\\\/:*?"<>|]/g,'-').trim();
+  const fname=[safe(d.school)||'RA', safe(t.title), safe(d.date)].filter(Boolean).join(' - ')+'.pdf';
+  doc.save(fname);
+}
+document.getElementById("print").onclick=()=>downloadPdf();
 document.getElementById("reset").onclick=()=>{if(confirm("Reset everything to the default templates? This clears all entries and any added templates.")){state=init();save();bindDetails();render();}};
 
 buildMatrix(); bindDetails(); render();
